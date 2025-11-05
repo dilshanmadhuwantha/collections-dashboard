@@ -1,24 +1,28 @@
 import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 
 export default function AgentDashboard() {
   const [stats, setStats] = useState([]);
-  const empId = 480; // change this to the real Employee ID you want to view
+  const router = useRouter();
+  const { empId } = router.query;
 
   useEffect(() => {
+    if (!empId) return;
     async function fetchData() {
       try {
         const res = await fetch(`/api/getAgentStats?empId=${empId}`);
         const json = await res.json();
-        console.log("Fetched data:", json); // helps you debug
         if (json.success) setStats(json.data);
       } catch (err) {
         console.error("Error fetching data:", err);
       }
     }
     fetchData();
-  }, []);
+  }, [empId]);
 
-  // Group by Criterion + Subcategory
+  if (!empId)
+    return <p style={{ padding: 40 }}>Please log in with your Employee ID.</p>;
+
   const grouped = stats.reduce((acc, r) => {
     const key = `${r.Criterion} - ${r.Subcategory || "General"}`;
     acc[key] = acc[key] ? acc[key] + Number(r.Value || 0) : Number(r.Value || 0);
@@ -29,7 +33,6 @@ export default function AgentDashboard() {
     <div style={{ padding: "40px", fontFamily: "sans-serif" }}>
       <h1>Agent Dashboard</h1>
       <p>Employee ID: {empId}</p>
-
       {stats.length === 0 ? (
         <p>Loading data...</p>
       ) : (
