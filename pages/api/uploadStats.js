@@ -31,9 +31,9 @@ export default async function handler(req, res) {
         },
       }));
 formatted.forEach((r) => {
-    r.fields.uploaded_at = new Date().toISOString();
-    r.fields.source = "Manager Upload";
-  });
+  r.fields.source_upload = "Manager Upload";
+  // "created_at" is already handled automatically by Airtable, no need to set
+});
       await base("Stats").create(formatted);
       inserted += formatted.length;
     }
