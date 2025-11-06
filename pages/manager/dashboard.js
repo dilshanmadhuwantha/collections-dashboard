@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  ResponsiveContainer
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
 } from "recharts";
 
 export default function ManagerDashboard() {
@@ -11,120 +16,203 @@ export default function ManagerDashboard() {
     async function load() {
       const res = await fetch("/api/getAllStats");
       const json = await res.json();
-      if (json.success) setRows(json.data);
+      if (json.success) {
+        setRows(json.data);
+      }
     }
     load();
   }, []);
 
-  // Convert date (YYYY-MM-DD)
-  const formatDate = (val) => val?.split("T")[0];
+  // ✅ Format date as YYYY-MM-DD
+  function formatDate(dateString) {
+    if (!dateString) return null;
+    const d = new Date(dateString);
+    if (isNaN(d)) return null;
+    return d.toISOString().split("T")[0];
+  }
 
-  // GROUP rows by: date → criterion → agent
+  // ✅ Group data by day → then agent-wise
   const dailyData = {};
 
   rows.forEach((row) => {
-    const date = formatDate(row.date);
+    const date = formatDate(row.created_at); // ✅ IMPORTANT FIX
     if (!date) return;
 
-    if (!dailyData[date]) dailyData[date] = {
-      "Call Count": {},
-      "Money Collection": {
-        PreDue: {},
-        Soft: {},
-        Medium: {},
-        Hard: {},
-        RES: {},
-      },
-      "PTP Count": {},
-      "Login Time": {},
-    };
+    if (!dailyData[date]) {
+      dailyData[date] = {
+        "Call Count": {},
+        "Money Collection": {
+          PreDue: {},
+          Soft: {},
+          Medium: {},
+          Hard: {},
+          RES: {},
+        },
+        "PTP Count": {},
+        "Login Time": {},
+      };
+    }
 
     const agent = row.Employee;
     const value = Number(row.Value || 0);
 
-    // ✅ CALL COUNT (ignore subcategory)
+    // ✅ Call Count (no subcategory used)
     if (row.Criterion === "Call Count") {
       dailyData[date]["Call Count"][agent] =
         (dailyData[date]["Call Count"][agent] || 0) + value;
     }
 
-    // ✅ MONEY COLLECTION (use subcategories)
+    // ✅ Money Collection — 5 buckets
     if (row.Criterion === "Money Collection") {
-      const sub = row.Subcategory || "Soft";
-      dailyData[date]["Money Collection"][sub][agent] =
-        (dailyData[date]["Money Collection"][sub][agent] || 0) + value;
+      const bucket = row.Subcategory || "General";
+      if (dailyData[date]["Money Collection"][bucket]) {
+        dailyData[date]["Money Collection"][bucket][agent] =
+          (dailyData[date]["Money Collection"][bucket][agent] || 0) + value;
+      }
     }
 
-    // ✅ PTP COUNT (General only)
+    // ✅ PTP Count — General only
     if (row.Criterion === "PTP Count") {
       dailyData[date]["PTP Count"][agent] =
         (dailyData[date]["PTP Count"][agent] || 0) + value;
     }
 
-    // ✅ LOGIN TIME (General)
+    // ✅ Login Time — General only
     if (row.Criterion === "Login Time") {
       dailyData[date]["Login Time"][agent] =
         (dailyData[date]["Login Time"][agent] || 0) + value;
     }
   });
 
-  // Convert grouped to chart array
-  const toChart = (obj) =>
-    Object.entries(obj).map(([agent, value]) => ({ agent, value }));
+  // ✅ Helper: convert object → chart array
+  function toChartData(obj) {
+    return Object.entries(obj).map(([agent, value]) => ({
+      agent,
+      value,
+    }));
+  }
 
   return (
     <div style={{ padding: "40px", fontFamily: "Arial" }}>
       <h1>Manager Dashboard</h1>
       <h2>Total Rows: {rows.length}</h2>
 
-      {/* ✅ DAILY BLOCKS */}
-      {Object.keys(dailyData).map((date) => (
-        <div key={date} style={{ marginTop: 40 }}>
+      {/* ✅ Daily Charts */}
+      <h2 style={{ marginTop: 30 }}>Daily Performance</h2>
+
+      {Object.entries(dailyData).map(([date, data]) => (
+        <div key={date} style={{ marginTop: 50, paddingBottom: 40 }}>
           <h2>📅 {date}</h2>
 
-          {/* ✅ CALL COUNT (all agents) */}
-          <h3>Call Count — All Agents</h3>
-          <ChartBlock data={toChart(dailyData[date]["Call Count"])} />
+          {/* ✅ CALL COUNT (Agent wise) */}
+          <h3>Call Count (All Agents)</h3>
+          <div style={{ width: "100%", height: 300 }}>
+            <ResponsiveContainer>
+              <BarChart data={toChartData(data["Call Count"])}>
+                <XAxis dataKey="agent" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#007bff" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
 
-          {/* ✅ MONEY COLLECTION BY SUBCATEGORY */}
-          <h3 style={{ marginTop: 20 }}>Money Collection</h3>
+          {/* ✅ MONEY COLLECTION — 5 bucket charts */}
+          <h3>Money Collection — PreDue</h3>
+          <div style={{ width: "100%", height: 300 }}>
+            <ResponsiveContainer>
+              <BarChart data={toChartData(data["Money Collection"].PreDue)}>
+                <XAxis dataKey="agent" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#FF5733" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
 
-          {["PreDue", "Soft", "Medium", "Hard", "RES"].map((sub) => (
-            <div key={sub} style={{ marginBottom: 25 }}>
-              <h4>{sub}</h4>
-              <ChartBlock data={toChart(dailyData[date]["Money Collection"][sub])} />
-            </div>
-          ))}
+          <h3>Money Collection — Soft</h3>
+          <div style={{ width: "100%", height: 300 }}>
+            <ResponsiveContainer>
+              <BarChart data={toChartData(data["Money Collection"].Soft)}>
+                <XAxis dataKey="agent" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#33A1FF" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <h3>Money Collection — Medium</h3>
+          <div style={{ width: "100%", height: 300 }}>
+            <ResponsiveContainer>
+              <BarChart data={toChartData(data["Money Collection"].Medium)}>
+                <XAxis dataKey="agent" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#2ECC71" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <h3>Money Collection — Hard</h3>
+          <div style={{ width: "100%", height: 300 }}>
+            <ResponsiveContainer>
+              <BarChart data={toChartData(data["Money Collection"].Hard)}>
+                <XAxis dataKey="agent" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#C70039" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <h3>Money Collection — RES</h3>
+          <div style={{ width: "100%", height: 300 }}>
+            <ResponsiveContainer>
+              <BarChart data={toChartData(data["Money Collection"].RES)}>
+                <XAxis dataKey="agent" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#9B59B6" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
 
           {/* ✅ PTP COUNT */}
-          <h3>PTP Count — All Agents</h3>
-          <ChartBlock data={toChart(dailyData[date]["PTP Count"])} />
+          <h3>PTP Count (General)</h3>
+          <div style={{ width: "100%", height: 300 }}>
+            <ResponsiveContainer>
+              <BarChart data={toChartData(data["PTP Count"])}>
+                <XAxis dataKey="agent" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#FF8C00" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
 
           {/* ✅ LOGIN TIME */}
-          <h3>Login Time — All Agents</h3>
-          <ChartBlock data={toChart(dailyData[date]["Login Time"])} />
+          <h3>Login Time (General)</h3>
+          <div style={{ width: "100%", height: 300 }}>
+            <ResponsiveContainer>
+              <BarChart data={toChartData(data["Login Time"])}>
+                <XAxis dataKey="agent" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#17A589" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-/* ✅ Reusable chart component */
-function ChartBlock({ data }) {
-  if (!data || data.length === 0)
-    return <p style={{ color: "gray" }}>No data</p>;
-
-  return (
-    <div style={{ width: "100%", height: 260 }}>
-      <ResponsiveContainer>
-        <BarChart data={data}>
-          <XAxis dataKey="agent" />
-          <YAxis />
-          <Tooltip />
-          <Legend />
-          <Bar dataKey="value" fill="#0088FE" />
-        </BarChart>
-      </ResponsiveContainer>
     </div>
   );
 }
