@@ -1,21 +1,24 @@
 import Airtable from "airtable";
 
-// Initialize Airtable connection
+// Initialize Airtable
 const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY })
   .base(process.env.AIRTABLE_BASE_ID);
 
 export default async function handler(req, res) {
-  // Only allow POST requests
+  // Allow only POST
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
   try {
-    const { rows } = req.body;
+    const { rows, managerName } = req.body;
 
-    // Validate request
     if (!rows || rows.length === 0) {
       return res.status(400).json({ success: false, error: "No rows found" });
+    }
+
+    if (!managerName || managerName.trim() === "") {
+      return res.status(400).json({ success: false, error: "Manager name missing" });
     }
 
     let inserted = 0;
@@ -24,9 +27,7 @@ export default async function handler(req, res) {
     const batches = [];
     while (rows.length) batches.push(rows.splice(0, 10));
 
-    // Process each batch
     for (const batch of batches) {
-      // Map Excel rows to Airtable fields
       const formatted = batch.map((r) => ({
         fields: {
           Employee: r.Employee,
@@ -37,21 +38,22 @@ export default async function handler(req, res) {
         },
       }));
 
-      // ✅ Add source tag for tracking uploads
+      // ✅ Add metadata fields
       formatted.forEach((r) => {
         r.fields.source_upload = "Manager Upload";
-        // "created_at" will be handled automatically by Airtable
+        r.fields.uploaded_by = managerName;      // ✅ Manager name stored
+        // created_at is auto-filled by Airtable
       });
 
-      // Create records in Airtable
+      // ✅ Send to Airtable
       await base("Stats").create(formatted);
       inserted += formatted.length;
     }
 
-    // Return success response
-    res.status(200).json({ success: true, inserted });
+    return res.status(200).json({ success: true, inserted });
+
   } catch (err) {
-    console.error("Airtable upload error:", err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Upload API Error:", err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 }
