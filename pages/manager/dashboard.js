@@ -1,63 +1,105 @@
 import { useEffect, useState } from "react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, ResponsiveContainer
+} from "recharts";
 
 export default function ManagerDashboard() {
-  const [stats, setStats] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]);
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const res = await fetch("/api/getAllStats");
-        const json = await res.json();
-        if (json.success) {
-          setStats(json.data);
-        }
-      } catch (err) {
-        console.error("Error loading stats:", err);
+    async function load() {
+      const res = await fetch("/api/getAllStats");
+      const json = await res.json();
+      if (json.success) {
+        setRows(json.data);
       }
-      setLoading(false);
     }
-    loadData();
+    load();
   }, []);
 
+  // Group by Criterion
+  const criterionTotals = rows.reduce((acc, row) => {
+    acc[row.Criterion] = (acc[row.Criterion] || 0) + Number(row.Value || 0);
+    return acc;
+  }, {});
+
+  const criterionData = Object.entries(criterionTotals).map(([key, value]) => ({
+    name: key,
+    value
+  }));
+
+  // Colors for pie
+  const COLORS = ["#0088FE", "#FF8042", "#00C49F", "#FFBB28", "#AA00FF"];
+
   return (
-    <div style={{ padding: 40, fontFamily: "sans-serif" }}>
+    <div style={{ padding: "40px", fontFamily: "Arial" }}>
       <h1>Manager Dashboard</h1>
 
-      {loading ? <p>Loading data...</p> : null}
+      <h2>Total Rows: {rows.length}</h2>
 
-      {!loading && (
-        <>
-          <p><strong>Total Rows:</strong> {stats.length}</p>
+      {/* ✅ BAR CHART */}
+      <div style={{ width: "100%", height: 350, marginTop: 40 }}>
+        <h3>Performance by Criterion (Bar Chart)</h3>
+        <ResponsiveContainer>
+          <BarChart data={criterionData}>
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="value" fill="#0088FE" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
 
-          <table border="1" cellPadding="8" style={{ marginTop: 20 }}>
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Employee ID</th>
-                <th>Criterion</th>
-                <th>Subcategory</th>
-                <th>Value</th>
-                <th>Uploaded By</th>
-                <th>Created At</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.Employee}</td>
-                  <td>{r["Employee ID"]}</td>
-                  <td>{r.Criterion}</td>
-                  <td>{r.Subcategory}</td>
-                  <td>{r.Value}</td>
-                  <td>{r.uploaded_by || "-"}</td>
-                  <td>{r.created_at || "-"}</td>
-                </tr>
+      {/* ✅ PIE CHART */}
+      <div style={{ width: "100%", height: 350, marginTop: 40 }}>
+        <h3>Performance Distribution (Pie Chart)</h3>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie
+              data={criterionData}
+              dataKey="value"
+              nameKey="name"
+              outerRadius={130}
+            >
+              {criterionData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
-            </tbody>
-          </table>
-        </>
-      )}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ✅ OLD TABLE STILL SHOWN BELOW IF YOU WANT */}
+      <h3 style={{ marginTop: 40 }}>Raw Data</h3>
+      <table border="1" cellPadding="8" style={{ borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th>Employee ID</th>
+            <th>Criterion</th>
+            <th>Subcategory</th>
+            <th>Value</th>
+            <th>Uploaded By</th>
+            <th>Created At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i}>
+              <td>{row.Employee}</td>
+              <td>{row["Employee ID"]}</td>
+              <td>{row.Criterion}</td>
+              <td>{row.Subcategory}</td>
+              <td>{row.Value}</td>
+              <td>{row.uploaded_by || "-"}</td>
+              <td>{row.created_at}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
