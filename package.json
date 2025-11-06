@@ -7,11 +7,12 @@
     "build": "next build",
     "start": "next start"
   },
- "dependencies": {
+"dependencies": {
   "next": "13.4.7",
   "react": "18.2.0",
   "react-dom": "18.2.0",
   "recharts": "^2.8.0",
-  "react-datepicker": "^4.24.0"
+  "react-datepicker": "^4.24.0",
+  "airtable": "^0.12.2"
 }
 }
