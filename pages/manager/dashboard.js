@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, ResponsiveContainer
+  BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
+  ResponsiveContainer
 } from "recharts";
 
 export default function ManagerDashboard() {
@@ -10,96 +11,120 @@ export default function ManagerDashboard() {
     async function load() {
       const res = await fetch("/api/getAllStats");
       const json = await res.json();
-      if (json.success) {
-        setRows(json.data);
-      }
+      if (json.success) setRows(json.data);
     }
     load();
   }, []);
 
-  // Group by Criterion
-  const criterionTotals = rows.reduce((acc, row) => {
-    acc[row.Criterion] = (acc[row.Criterion] || 0) + Number(row.Value || 0);
-    return acc;
-  }, {});
+  // Convert date (YYYY-MM-DD)
+  const formatDate = (val) => val?.split("T")[0];
 
-  const criterionData = Object.entries(criterionTotals).map(([key, value]) => ({
-    name: key,
-    value
-  }));
+  // GROUP rows by: date → criterion → agent
+  const dailyData = {};
 
-  // Colors for pie
-  const COLORS = ["#0088FE", "#FF8042", "#00C49F", "#FFBB28", "#AA00FF"];
+  rows.forEach((row) => {
+    const date = formatDate(row.date);
+    if (!date) return;
+
+    if (!dailyData[date]) dailyData[date] = {
+      "Call Count": {},
+      "Money Collection": {
+        PreDue: {},
+        Soft: {},
+        Medium: {},
+        Hard: {},
+        RES: {},
+      },
+      "PTP Count": {},
+      "Login Time": {},
+    };
+
+    const agent = row.Employee;
+    const value = Number(row.Value || 0);
+
+    // ✅ CALL COUNT (ignore subcategory)
+    if (row.Criterion === "Call Count") {
+      dailyData[date]["Call Count"][agent] =
+        (dailyData[date]["Call Count"][agent] || 0) + value;
+    }
+
+    // ✅ MONEY COLLECTION (use subcategories)
+    if (row.Criterion === "Money Collection") {
+      const sub = row.Subcategory || "Soft";
+      dailyData[date]["Money Collection"][sub][agent] =
+        (dailyData[date]["Money Collection"][sub][agent] || 0) + value;
+    }
+
+    // ✅ PTP COUNT (General only)
+    if (row.Criterion === "PTP Count") {
+      dailyData[date]["PTP Count"][agent] =
+        (dailyData[date]["PTP Count"][agent] || 0) + value;
+    }
+
+    // ✅ LOGIN TIME (General)
+    if (row.Criterion === "Login Time") {
+      dailyData[date]["Login Time"][agent] =
+        (dailyData[date]["Login Time"][agent] || 0) + value;
+    }
+  });
+
+  // Convert grouped to chart array
+  const toChart = (obj) =>
+    Object.entries(obj).map(([agent, value]) => ({ agent, value }));
 
   return (
     <div style={{ padding: "40px", fontFamily: "Arial" }}>
       <h1>Manager Dashboard</h1>
-
       <h2>Total Rows: {rows.length}</h2>
 
-      {/* ✅ BAR CHART */}
-      <div style={{ width: "100%", height: 350, marginTop: 40 }}>
-        <h3>Performance by Criterion (Bar Chart)</h3>
-        <ResponsiveContainer>
-          <BarChart data={criterionData}>
-            <XAxis dataKey="name" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="value" fill="#0088FE" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {/* ✅ DAILY BLOCKS */}
+      {Object.keys(dailyData).map((date) => (
+        <div key={date} style={{ marginTop: 40 }}>
+          <h2>📅 {date}</h2>
 
-      {/* ✅ PIE CHART */}
-      <div style={{ width: "100%", height: 350, marginTop: 40 }}>
-        <h3>Performance Distribution (Pie Chart)</h3>
-        <ResponsiveContainer>
-          <PieChart>
-            <Pie
-              data={criterionData}
-              dataKey="value"
-              nameKey="name"
-              outerRadius={130}
-            >
-              {criterionData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
+          {/* ✅ CALL COUNT (all agents) */}
+          <h3>Call Count — All Agents</h3>
+          <ChartBlock data={toChart(dailyData[date]["Call Count"])} />
 
-      {/* ✅ OLD TABLE STILL SHOWN BELOW IF YOU WANT */}
-      <h3 style={{ marginTop: 40 }}>Raw Data</h3>
-      <table border="1" cellPadding="8" style={{ borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th>Employee</th>
-            <th>Employee ID</th>
-            <th>Criterion</th>
-            <th>Subcategory</th>
-            <th>Value</th>
-            <th>Uploaded By</th>
-            <th>Created At</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i}>
-              <td>{row.Employee}</td>
-              <td>{row["Employee ID"]}</td>
-              <td>{row.Criterion}</td>
-              <td>{row.Subcategory}</td>
-              <td>{row.Value}</td>
-              <td>{row.uploaded_by || "-"}</td>
-              <td>{row.created_at}</td>
-            </tr>
+          {/* ✅ MONEY COLLECTION BY SUBCATEGORY */}
+          <h3 style={{ marginTop: 20 }}>Money Collection</h3>
+
+          {["PreDue", "Soft", "Medium", "Hard", "RES"].map((sub) => (
+            <div key={sub} style={{ marginBottom: 25 }}>
+              <h4>{sub}</h4>
+              <ChartBlock data={toChart(dailyData[date]["Money Collection"][sub])} />
+            </div>
           ))}
-        </tbody>
-      </table>
+
+          {/* ✅ PTP COUNT */}
+          <h3>PTP Count — All Agents</h3>
+          <ChartBlock data={toChart(dailyData[date]["PTP Count"])} />
+
+          {/* ✅ LOGIN TIME */}
+          <h3>Login Time — All Agents</h3>
+          <ChartBlock data={toChart(dailyData[date]["Login Time"])} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ✅ Reusable chart component */
+function ChartBlock({ data }) {
+  if (!data || data.length === 0)
+    return <p style={{ color: "gray" }}>No data</p>;
+
+  return (
+    <div style={{ width: "100%", height: 260 }}>
+      <ResponsiveContainer>
+        <BarChart data={data}>
+          <XAxis dataKey="agent" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Bar dataKey="value" fill="#0088FE" />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
