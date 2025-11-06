@@ -30,7 +30,10 @@ export default async function handler(req, res) {
           Value: Number(r.Value),
         },
       }));
-
+formatted.forEach((r) => {
+    r.fields.uploaded_at = new Date().toISOString();
+    r.fields.source = "Manager Upload";
+  });
       await base("Stats").create(formatted);
       inserted += formatted.length;
     }
