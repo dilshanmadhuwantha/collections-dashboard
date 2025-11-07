@@ -1,21 +1,21 @@
 import { supabase } from "../lib/supabase";
 
 export async function requireAuth(ctx, allowedRoles = []) {
-  const { req, res } = ctx;
+  const { req } = ctx;
 
+  // ✅ Get access token from cookies
   const accessToken = req.cookies["sb-access-token"];
   if (!accessToken) {
     return { redirect: { destination: "/login", permanent: false } };
   }
 
-  // ✅ Get current user
-  const { data: { user } } = await supabase.auth.getUser(accessToken);
-
-  if (!user) {
+  // ✅ Get the user from token
+  const { data: { user }, error: userErr } = await supabase.auth.getUser(accessToken);
+  if (!user || userErr) {
     return { redirect: { destination: "/login", permanent: false } };
   }
 
-  // ✅ Fetch profile for role checking
+  // ✅ Get user profile (role)
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
@@ -26,7 +26,7 @@ export async function requireAuth(ctx, allowedRoles = []) {
     return { redirect: { destination: "/login", permanent: false } };
   }
 
-  // ✅ Role protection
+  // ✅ Check allowed roles
   if (allowedRoles.length > 0 && !allowedRoles.includes(profile.role)) {
     return { redirect: { destination: "/login", permanent: false } };
   }
