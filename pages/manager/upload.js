@@ -1,108 +1,97 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import * as XLSX from "xlsx";
 
-export default function UploadHistory() {
-  const [logs, setLogs] = useState([]);
+export default function ManagerUploadPage() {
+  const [excelRows, setExcelRows] = useState([]);
+  const [managerName, setManagerName] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState("");
 
-  // Load upload logs
-  useEffect(() => {
-    async function load() {
-      const res = await fetch("/api/getUploads");
-      const json = await res.json();
-      if (json.success) setLogs(json.data);
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = (evt) => {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: "array" });
+
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(sheet);
+
+      setExcelRows(json);
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
+  const submitUpload = async () => {
+    if (!managerName) {
+      setMessage("Enter manager name");
+      return;
     }
-    load();
-  }, []);
+    if (excelRows.length === 0) {
+      setMessage("Upload an Excel file first");
+      return;
+    }
 
-  // Undo upload
-  const undoUpload = async (uploadId) => {
-    if (!confirm("Are you sure you want to undo this upload?")) return;
+    setUploading(true);
 
-    const res = await fetch("/api/undoUpload", {
+    const res = await fetch("/api/uploadStats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ upload_id: uploadId }),
+      body: JSON.stringify({
+        managerName,
+        rows: excelRows,
+      }),
     });
 
     const json = await res.json();
 
     if (json.success) {
-      alert("Upload undone successfully.");
-      location.reload();
+      setMessage(`✅ Uploaded ${json.inserted} rows`);
+      setExcelRows([]);
     } else {
-      alert("Undo failed: " + json.error);
+      setMessage("❌ Upload failed: " + json.error);
     }
-  };
 
-  // Export upload as Excel
-  const exportUpload = (uploadId) => {
-    window.location.href = "/api/exportUpload?upload_id=" + uploadId;
+    setUploading(false);
   };
 
   return (
-    <div style={{ padding: "40px", fontFamily: "Arial" }}>
-      <h1>Upload History</h1>
+    <div style={{ padding: 30 }}>
+      <h1>Manager Excel Upload</h1>
 
-      <table
-        border="1"
-        cellPadding="8"
-        style={{ width: "100%", borderCollapse: "collapse", marginTop: "20px" }}
+      <label>Manager Name</label>
+      <input
+        type="text"
+        value={managerName}
+        onChange={(e) => setManagerName(e.target.value)}
+        style={{ padding: 8, display: "block", marginBottom: 20 }}
+      />
+
+      <label>Upload Excel File</label>
+      <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} />
+
+      <button
+        onClick={submitUpload}
+        disabled={uploading}
+        style={{
+          marginTop: 20,
+          padding: "10px 20px",
+          background: "green",
+          color: "white",
+          cursor: "pointer",
+        }}
       >
-        <thead>
-          <tr style={{ background: "#f5f5f5" }}>
-            <th>Manager</th>
-            <th>Rows</th>
-            <th>Upload ID</th>
-            <th>Created</th>
-            <th>Export</th>
-            <th>Undo</th>
-          </tr>
-        </thead>
+        {uploading ? "Uploading..." : "Upload"}
+      </button>
 
-        <tbody>
-          {logs.map((log, index) => (
-            <tr key={index}>
-              <td>{log.manager_name}</td>
-              <td>{log.row_count}</td>
-              <td>{log.upload_id}</td>
-              <td>{log.created_at}</td>
-
-              {/* ✅ Export Button */}
-              <td>
-                <button
-                  onClick={() => exportUpload(log.upload_id)}
-                  style={{
-                    padding: "5px 12px",
-                    background: "#0070f3",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "5px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Export
-                </button>
-              </td>
-
-              {/* ✅ Undo Button */}
-              <td>
-                <button
-                  onClick={() => undoUpload(log.upload_id)}
-                  style={{
-                    padding: "5px 12px",
-                    background: "red",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "5px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Undo
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {message && (
+        <p style={{ marginTop: 20, fontWeight: "bold" }}>{message}</p>
+      )}
     </div>
   );
 }
