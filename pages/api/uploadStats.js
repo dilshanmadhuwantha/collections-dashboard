@@ -45,7 +45,7 @@ export default async function handler(req, res) {
       recordIds.push(...created.map((rec) => rec.id));
     }
 
-    // ✅ WRITE LOG ENTRY
+    // ✅ WRITE UPLOAD LOG
     await base("UploadLog").create([
       {
         fields: {
@@ -53,7 +53,8 @@ export default async function handler(req, res) {
           row_count: inserted,
           upload_id: uploadId,
           stats_record_ids: recordIds.join(","),
-          note: "Manager Excel Upload"
+          note: "Manager Excel Upload",
+          created_at: new Date().toISOString()
         },
       },
     ]);
