@@ -1,58 +1,78 @@
+// pages/api/seed/seedUsers.js
 import { createClient } from '@supabase/supabase-js';
 
-// IMPORTANT: use service role key (NOT anon key)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
 export default async function handler(req, res) {
-  // Secret check
+  // 1) Protect the endpoint with your Vercel env secret
   const expectedSecret = process.env.SECRET_SEED_TOKEN;
   const urlSecret = req.query.secret;
-
   if (urlSecret !== expectedSecret) {
-    return res.status(401).json({
-      ok: false,
-      debug: {
-        urlSecret,
-        envSecret: expectedSecret
-      }
-    });
+    return res.status(401).json({ ok: false, error: 'Unauthorized', debug: { urlSecret, envSecret: expectedSecret } });
   }
 
-  // ✅ User list
-  const users = [
-    { email: "nimesh@test.com", role: "manager", emp_id: 33, full_name: "Nimesh Perera" },
-    { email: "iresha@test.com", role: "agent", emp_id: 39, full_name: "Iresha Dilhani" },
-    { email: "asanka@test.com", role: "agent", emp_id: 40, full_name: "Asanka Nash" },
-    { email: "dilshan@test.com", role: "manager", emp_id: 59, full_name: "Dilshan Maduwantha" },
-    // ✅ Add all other employees here
+  // 2) Admin client (Service Role) – required to create auth users
+  const supa = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+
+  // 3) Your people list (example)
+  const people = [
+    { emp_id: 33,  name: 'Nimesh Perera',       role: 'manager', email: 'nimesh@test.com' },
+    { emp_id: 39,  name: 'Iresha Dilhani',      role: 'agent',   email: 'iresha@test.com' },
+    { emp_id: 40,  name: 'Asanka Nash',         role: 'agent',   email: 'asanka@test.com' },
+    { emp_id: 59,  name: 'Dilshan Maduwantha',  role: 'manager', email: 'dilshan@test.com' },
+    // ... (add the rest here as needed)
   ];
 
-  let created = [];
-  let errors = [];
+  const created = [];
+  const errors = [];
 
-  for (let u of users) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .upsert(
-        {
-          email: u.email,
-          role: u.role,
-          emp_id: u.emp_id,
-          display_name: u.full_name
-        },
-        { onConflict: "email" }
-      );
+  for (const p of people) {
+    try {
+      // 3a) Check if auth user already exists
+      let userId = null;
+      const check = await supa.auth.admin.getUserByEmail(p.email);
+      if (check.data?.user) {
+        userId = check.data.user.id;
+      } else {
+        // 3b) Create auth user if not exists
+        const { data: createRes, error: createErr } = await supa.auth.admin.createUser({
+          email: p.email,
+          password: 'Agent@123',
+          email_confirm: true,
+          user_metadata: { full_name: p.name, emp_id: p.emp_id, role: p.role }
+        });
+        if (createErr) {
+          errors.push({ user: p.email, step: 'createUser', error: createErr });
+          continue;
+        }
+        userId = createRes.user.id;
+      }
 
-    if (error) errors.push({ user: u.email, error });
-    else created.push(u.email);
+      // 3c) UPSERT into profiles – NOTE: onConflict must match UNIQUE(email)
+      const { error: upErr } = await supa
+        .from('profiles')
+        .upsert(
+          {
+            id: userId,                 // keep auth.id in sync
+            email: p.email,             // UNIQUE(email)
+            display_name: p.name,
+            role: p.role,
+            emp_id: p.emp_id
+          },
+          { onConflict: 'email' }       // <— MUST be exactly 'email'
+        );
+
+      if (upErr) {
+        errors.push({ user: p.email, step: 'profiles.upsert', error: upErr });
+      } else {
+        created.push(p.email);
+      }
+    } catch (e) {
+      errors.push({ user: p.email, step: 'exception', error: String(e) });
+    }
   }
 
-  return res.status(200).json({
-    ok: true,
-    created,
-    errors
-  });
+  return res.json({ ok: true, created, errors });
 }
