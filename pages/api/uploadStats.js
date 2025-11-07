@@ -20,10 +20,11 @@ export default async function handler(req, res) {
     let inserted = 0;
     let recordIds = [];
 
+    // Batch to 10 rows
     const batches = [];
-    let copyRows = [...rows];
-    while (copyRows.length) {
-      batches.push(copyRows.splice(0, 10));
+    let tempRows = [...rows];
+    while (tempRows.length) {
+      batches.push(tempRows.splice(0, 10));
     }
 
     for (const batch of batches) {
@@ -36,7 +37,7 @@ export default async function handler(req, res) {
           Value: Number(r.Value),
           source_upload: "Manager Upload",
           uploaded_by: managerName,
-          uploadId: uploadId        // ✅ Correct field name
+          upload_id: uploadId       // ✅ must match Airtable
         },
       }));
 
@@ -45,14 +46,14 @@ export default async function handler(req, res) {
       recordIds.push(...created.map((rec) => rec.id));
     }
 
-    // ✅ WRITE LOG ENTRY
+    // ✅ Write into UploadLog
     await base("UploadLog").create([
       {
         fields: {
           manager_name: managerName,
           row_count: inserted,
-          uploadId: uploadId,                 // ✅ Correct field name
-          statsRecordIds: recordIds.join(","), // ✅ Correct field name
+          upload_id: uploadId,
+          stats_record_ids: recordIds.join(","),   // ✅ exact field name
           note: "Manager Excel Upload"
         },
       },
@@ -62,6 +63,6 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
   }
 }
