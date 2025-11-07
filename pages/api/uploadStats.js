@@ -10,62 +10,58 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { rows, managerName, note } = req.body;
+    const { rows, managerName } = req.body;
 
     if (!rows || rows.length === 0) {
-      return res.status(400).json({ success: false, error: "No rows found" });
+      return res.status(400).json({ success: false, error: "No rows provided" });
     }
 
-    // ✅ Generate REAL upload ID
     const uploadId = uuidv4();
-
-    // ✅ Insert into Stats table
-    const batches = [];
     let inserted = 0;
+    let recordIds = [];
 
-    const statsRecords = [];
+    const batches = [];
+    let copyRows = [...rows];
+    while (copyRows.length) {
+      batches.push(copyRows.splice(0, 10));
+    }
 
-    for (let i = 0; i < rows.length; i += 10) {
-      const batch = rows.slice(i, 10 + i);
-
+    for (const batch of batches) {
       const formatted = batch.map((r) => ({
         fields: {
           Employee: r.Employee,
-          "Employee ID": String(r["Employee ID"] || ""),
+          "Employee ID": String(r["Employee ID"]),
           Criterion: r.Criterion,
-          Subcategory: r.Subcategory || "",
-          Value: Number(r.Value || 0),
-          upload_id: uploadId, // ✅ VERY IMPORTANT
+          Subcategory: r.Subcategory ?? "",
+          Value: Number(r.Value),
+          source_upload: "Manager Upload",
+          uploaded_by: managerName,
+          upload_id: uploadId
         },
       }));
 
       const created = await base("Stats").create(formatted);
-      created.forEach((rec) => statsRecords.push(rec.id));
-
-      inserted += formatted.length;
+      inserted += created.length;
+      recordIds.push(...created.map((rec) => rec.id));
     }
 
-    // ✅ Store Upload Log (correct)
+    // ✅ WRITE LOG ENTRY
     await base("UploadLog").create([
       {
         fields: {
-          manager_name: managerName || "Unknown",
+          manager_name: managerName,
           row_count: inserted,
-          upload_id: uploadId, // ✅ MUST store this ID
-          stats_record_ids: statsRecords.join(","),
-          note: note || "",
+          upload_id: uploadId,
+          stats_record_ids: recordIds.join(","),
+          note: "Manager Excel Upload"
         },
       },
     ]);
 
-    return res.status(200).json({
-      success: true,
-      inserted,
-      uploadId,
-    });
+    res.status(200).json({ success: true, inserted, uploadId });
 
   } catch (err) {
-    console.error("UPLOAD ERROR:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
   }
 }
