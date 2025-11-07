@@ -1,63 +1,46 @@
-// pages/api/exportUpload.js
 import Airtable from "airtable";
 import XLSX from "xlsx";
 
-const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
-  process.env.AIRTABLE_BASE_ID
-);
+const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY })
+  .base(process.env.AIRTABLE_BASE_ID);
 
 export default async function handler(req, res) {
   try {
-    const uploadId = req.query.upload_id;
+    const uploadId = req.query.upload_id; // ✅ correct query parameter
+
     if (!uploadId) {
-      return res.status(400).json({ error: "upload_id required" });
+      return res.status(400).json({ error: "Missing upload_id" });
     }
 
-    // ✅ Find UploadLog entry and get stats_record_ids[]
-    const uploadRecords = await base("UploadLog")
+    // ✅ 1. Get Stats rows that belong to this upload
+    const records = await base("Stats")
       .select({
-        filterByFormula: `{upload_id} = "${uploadId}"`,
-      })
-      .firstPage();
-
-    if (uploadRecords.length === 0)
-      return res.status(404).json({ error: "Upload ID not found" });
-
-    const statsIds = uploadRecords[0].get("stats_record_ids") || [];
-
-    if (statsIds.length === 0)
-      return res.status(400).json({ error: "No stats linked to this upload" });
-
-    // ✅ Fetch all stats rows
-    const stats = await base("Stats")
-      .select({
-        filterByFormula: `OR(${statsIds.map(id => `RECORD_ID()="${id}"`).join(",")})`,
+        filterByFormula: `{upload_id} = "${uploadId}"`, // ✅ exact Airtable field name
+        maxRecords: 10000
       })
       .all();
 
-    const exportRows = stats.map((r) => ({
-      Employee: r.get("Employee"),
-      EmployeeID: r.get("Employee ID"),
-      Criterion: r.get("Criterion"),
-      Subcategory: r.get("Subcategory"),
-      Value: r.get("Value"),
-      UploadedBy: r.get("uploaded_by"),
-      CreatedAt: r.get("created_at"),
-    }));
+    if (!records || records.length === 0) {
+      return res.status(404).json({ error: "No rows found for this upload_id" });
+    }
 
-    // ✅ Create Excel workbook
+    // ✅ 2. Convert to worksheet format
+    const rows = records.map(rec => rec.fields);
+
+    const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(exportRows);
     XLSX.utils.book_append_sheet(wb, ws, "UploadData");
 
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 
-    res.setHeader("Content-Disposition", `attachment; filename=${uploadId}.xlsx`);
+    // ✅ 3. Return Excel file
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="upload_${uploadId}.xlsx"`);
 
-    return res.status(200).send(buffer);
+    res.send(buffer);
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to export upload data" });
+    console.error("EXPORT ERROR:", err);
+    return res.status(500).json({ error: "Failed to export upload data" });
   }
 }
