@@ -1,4 +1,8 @@
-// pages/manager/dashboard.js
+import { requireAuth } from "../../utils/requireAuth";
+
+export async function getServerSideProps(ctx) {
+  return requireAuth(ctx, ["manager"]);
+}// pages/manager/dashboard.js
 import { useEffect, useMemo, useState } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
