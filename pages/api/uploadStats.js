@@ -36,7 +36,7 @@ export default async function handler(req, res) {
           Value: Number(r.Value),
           source_upload: "Manager Upload",
           uploaded_by: managerName,
-          upload_id: uploadId
+          uploadId: uploadId        // ✅ Correct field name
         },
       }));
 
@@ -45,16 +45,15 @@ export default async function handler(req, res) {
       recordIds.push(...created.map((rec) => rec.id));
     }
 
-    // ✅ WRITE UPLOAD LOG
+    // ✅ WRITE LOG ENTRY
     await base("UploadLog").create([
       {
         fields: {
           manager_name: managerName,
           row_count: inserted,
-          upload_id: uploadId,
-          stats_record_ids: recordIds.join(","),
-          note: "Manager Excel Upload",
-          created_at: new Date().toISOString()
+          uploadId: uploadId,                 // ✅ Correct field name
+          statsRecordIds: recordIds.join(","), // ✅ Correct field name
+          note: "Manager Excel Upload"
         },
       },
     ]);
