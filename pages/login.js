@@ -13,7 +13,7 @@ export default function Login() {
     e.preventDefault();
     setErrorMsg("");
 
-    // 1) Supabase Login
+    // Sign in
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -26,7 +26,7 @@ export default function Login() {
 
     const user = data.user;
 
-    // 2) Fetch user profile & role
+    // Fetch profile
     const { data: profile } = await supabase
       .from("profiles")
       .select("*")
@@ -34,22 +34,22 @@ export default function Login() {
       .single();
 
     if (!profile) {
-      setErrorMsg("Profile not found!");
+      setErrorMsg("Profile not found");
       return;
     }
 
-    // ✅ Role-based redirect
+    // Redirect based on role
     if (profile.role === "manager" || profile.role === "admin") {
       router.push("/manager/dashboard");
     } else if (profile.role === "agent") {
       router.push(`/agent/dashboard?empId=${profile.emp_id}`);
     } else {
-      setErrorMsg("Unknown role. Contact admin.");
+      setErrorMsg("Role not recognized");
     }
   };
 
   return (
-    <div style={{ padding: "60px", maxWidth: 400, margin: "0 auto" }}>
+    <div style={{ padding: 50, maxWidth: 400, margin: "0 auto" }}>
       <h1>Login</h1>
 
       <form onSubmit={handleLogin}>
