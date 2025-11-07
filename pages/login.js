@@ -1,89 +1,90 @@
 // pages/login.js
 import { useState } from "react";
-import { supabase } from "../utils/supabaseClient";
 import { useRouter } from "next/router";
+import { supabase } from "../utils/supabaseClient";
 
 export default function Login() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setErrorMsg("");
+    setError("");
+    setLoading(true);
 
-    // Sign in
-    const { data, error } = await supabase.auth.signInWithPassword({
+    // 1) sign in
+    const { data, error: signErr } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) {
-      setErrorMsg(error.message);
+    if (signErr) {
+      setLoading(false);
+      setError(signErr.message || "Login failed");
       return;
     }
 
-    const user = data.user;
+    const user = data?.user;
+    if (!user) {
+      setLoading(false);
+      setError("No user returned");
+      return;
+    }
 
-    // Fetch profile
-    const { data: profile } = await supabase
+    // 2) fetch profile BY ID (works with RLS policy id = auth.uid())
+    const { data: profile, error: profErr } = await supabase
       .from("profiles")
-      .select("*")
+      .select("id, role, emp_id, display_name")
       .eq("id", user.id)
       .single();
 
-    if (!profile) {
-      setErrorMsg("Profile not found");
+    setLoading(false);
+
+    if (profErr || !profile) {
+      setError("Profile not found");
       return;
     }
 
-    // Redirect based on role
-    if (profile.role === "manager" || profile.role === "admin") {
+    // 3) route by role
+    if (profile.role === "agent") {
+      router.push("/agent/dashboard");
+    } else if (profile.role === "manager" || profile.role === "admin") {
       router.push("/manager/dashboard");
-    } else if (profile.role === "agent") {
-      router.push(`/agent/dashboard?empId=${profile.emp_id}`);
     } else {
-      setErrorMsg("Role not recognized");
+      setError("Unknown role");
     }
   };
 
   return (
-    <div style={{ padding: 50, maxWidth: 400, margin: "0 auto" }}>
+    <div style={{ maxWidth: 520, margin: "60px auto", fontFamily: "sans-serif" }}>
       <h1>Login</h1>
-
       <form onSubmit={handleLogin}>
         <input
           type="email"
-          placeholder="Email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => setEmail(e.target.value.toLowerCase())}
+          placeholder="Email"
           style={{ width: "100%", padding: 10, marginBottom: 10 }}
         />
-
         <input
           type="password"
-          placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password"
           style={{ width: "100%", padding: 10, marginBottom: 10 }}
         />
-
-        {errorMsg && (
-          <div style={{ color: "red", marginBottom: 10 }}>{errorMsg}</div>
-        )}
-
+        {error ? (
+          <div style={{ color: "red", marginBottom: 10 }}>{error}</div>
+        ) : null}
         <button
           type="submit"
-          style={{
-            width: "100%",
-            padding: 12,
-            background: "black",
-            color: "white",
-            cursor: "pointer",
-          }}
+          disabled={loading}
+          style={{ width: "100%", padding: 10, cursor: "pointer" }}
         >
-          Login
+          {loading ? "Signing in..." : "Login"}
         </button>
       </form>
     </div>
