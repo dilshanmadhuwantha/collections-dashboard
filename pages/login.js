@@ -1,4 +1,4 @@
-// pages/login.js
+// /pages/login.js
 import { useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabase";
@@ -10,13 +10,13 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleLogin = async (e) => {
+  async function handleLogin(e) {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    // 1) sign in
-    const { data, error: signErr } = await supabase.auth.signInWithPassword({
+    // 1) Sign in with Supabase
+    const { data: signData, error: signErr } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -27,66 +27,99 @@ export default function Login() {
       return;
     }
 
-    const user = data?.user;
+    const user = signData?.user;
     if (!user) {
       setLoading(false);
-      setError("No user returned");
+      setError("No user returned from auth");
       return;
     }
 
-    // 2) fetch profile BY ID (works with RLS policy id = auth.uid())
+    // 2) Confirm session exists (useful for RLS)
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData?.session?.user?.id) {
+      setLoading(false);
+      setError("No active session after sign-in");
+      return;
+    }
+
+    // 3) Fetch the profile row by id (RLS expects id = auth.uid())
     const { data: profile, error: profErr } = await supabase
       .from("profiles")
-      .select("id, role, emp_id, display_name")
+      .select("id, role, emp_id, display_name, email")
       .eq("id", user.id)
-      .single();
+      .maybeSingle(); // don't throw on 0 rows
 
     setLoading(false);
 
-    if (profErr || !profile) {
-      setError("Profile not found");
+    if (!profile) {
+      setError(profErr?.message || "Profile not found (no row visible under RLS)");
       return;
     }
 
-    // 3) route by role
-    if (profile.role === "agent") {
+    // 4) Route by role
+    const role = (profile.role || "").toLowerCase();
+    if (role === "agent") {
       router.push("/agent/dashboard");
-    } else if (profile.role === "manager" || profile.role === "admin") {
+    } else if (role === "manager" || role === "admin") {
       router.push("/manager/dashboard");
     } else {
-      setError("Unknown role");
+      setError(`Unknown role: ${profile.role ?? "null"}`);
     }
-  };
+  }
 
   return (
-    <div style={{ maxWidth: 520, margin: "60px auto", fontFamily: "sans-serif" }}>
+    <div style={{
+      maxWidth: 540,
+      margin: "60px auto",
+      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
+      lineHeight: 1.5
+    }}>
       <h1>Login</h1>
+
       <form onSubmit={handleLogin}>
         <input
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value.toLowerCase())}
+          onChange={(e) => setEmail((e.target.value || "").toLowerCase())}
           placeholder="Email"
-          style={{ width: "100%", padding: 10, marginBottom: 10 }}
+          autoComplete="username"
+          required
+          style={{ width: "100%", padding: 12, marginBottom: 10 }}
         />
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
-          style={{ width: "100%", padding: 10, marginBottom: 10 }}
+          autoComplete="current-password"
+          required
+          style={{ width: "100%", padding: 12, marginBottom: 10 }}
         />
+
         {error ? (
           <div style={{ color: "red", marginBottom: 10 }}>{error}</div>
         ) : null}
+
         <button
           type="submit"
           disabled={loading}
-          style={{ width: "100%", padding: 10, cursor: "pointer" }}
+          style={{
+            width: "100%",
+            padding: 12,
+            cursor: "pointer",
+            background: "#000",
+            color: "#fff",
+            border: "none",
+            borderRadius: 6
+          }}
         >
-          {loading ? "Signing in..." : "Login"}
+          {loading ? "Signing in…" : "Login"}
         </button>
       </form>
+
+      <div style={{ marginTop: 14, fontSize: 12, color: "#666" }}>
+        Tip: make sure your <code>profiles</code> row exists with the same <code>id</code> as <code>auth.users</code>.
+      </div>
     </div>
   );
 }
