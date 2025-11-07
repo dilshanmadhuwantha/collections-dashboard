@@ -1,278 +1,163 @@
 import { useEffect, useState } from "react";
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend,
-  ResponsiveContainer, CartesianGrid
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  CartesianGrid,
 } from "recharts";
 
 export default function ManagerDashboard() {
-  const [allRows, setAllRows] = useState([]);
   const [rows, setRows] = useState([]);
+  const [filtered, setFiltered] = useState([]);
 
   // Filters
-  const [mode, setMode] = useState("single");   // single | range
+  const [mode, setMode] = useState("single");
   const [singleDate, setSingleDate] = useState("");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
 
-  const [selectedAgent, setSelectedAgent] = useState("All");
-  const [selectedCriterion, setSelectedCriterion] = useState("All");
+  const [agent, setAgent] = useState("All");
+  const [criterion, setCriterion] = useState("All");
+  const [subcategory, setSubcategory] = useState("All");
 
-  // Trend metric
-  const [trendMetric, setTrendMetric] = useState("Money Collection");
-  const [trendBucket, setTrendBucket] = useState("Hard");
-
+  // Load data from API
   useEffect(() => {
     async function load() {
       const res = await fetch("/api/getAllStats");
       const json = await res.json();
-      if (json.success) {
-        setAllRows(json.data);
 
-        // auto-select latest date
-        const newest = json.data
-          .map(r => r.date.slice(0, 10))
-          .sort()
-          .reverse()[0];
+      if (json.success) {
+        const data = json.data.map((r) => ({
+          ...r,
+          safeDate: (r.date || r.created_at || "").slice(0, 10),
+        }));
+
+        setRows(data);
+
+        // Auto-select newest date
+        const newest = data.length
+          ? data
+              .map((r) => r.safeDate)
+              .filter((d) => d)
+              .sort()
+              .reverse()[0]
+          : "";
 
         setSingleDate(newest);
       }
     }
+
     load();
   }, []);
 
-  // ✅ Date + Filters
+  // Filter logic
   useEffect(() => {
-    if (allRows.length === 0) return;
+    let f = [...rows];
 
-    let filtered = [...allRows];
-
-    // ✅ DATE FILTER FIX — trims timestamp
+    // Filter by date mode
     if (mode === "single" && singleDate) {
-      filtered = filtered.filter(
-        (r) => r.date.slice(0, 10) === singleDate
+      f = f.filter((r) => r.safeDate === singleDate);
+    }
+
+    if (mode === "range" && rangeStart && rangeEnd) {
+      f = f.filter(
+        (r) => r.safeDate >= rangeStart && r.safeDate <= rangeEnd
       );
     }
 
-    // ✅ DATE RANGE FIX
-    if (mode === "range" && rangeStart && rangeEnd) {
-      filtered = filtered.filter((r) => {
-        const d = r.date.slice(0, 10);
-        return d >= rangeStart && d <= rangeEnd;
-      });
-    }
+    // Filter by agent
+    if (agent !== "All") f = f.filter((r) => r.Employee === agent);
 
-    // Agent
-    if (selectedAgent !== "All") {
-      filtered = filtered.filter((r) => r.Employee === selectedAgent);
-    }
+    // Filter by criterion
+    if (criterion !== "All") f = f.filter((r) => r.Criterion === criterion);
 
-    // Criterion
-    if (selectedCriterion !== "All") {
-      filtered = filtered.filter((r) => r.Criterion === selectedCriterion);
-    }
+    // Filter by subcategory
+    if (subcategory !== "All")
+      f = f.filter((r) => r.Subcategory === subcategory);
 
-    setRows(filtered);
-  }, [allRows, mode, singleDate, rangeStart, rangeEnd, selectedAgent, selectedCriterion]);
+    setFiltered(f);
+  }, [rows, mode, singleDate, rangeStart, rangeEnd, agent, criterion, subcategory]);
 
-  // ========= SUMMARY TOTALS ===========
+  // Group and summarize metrics
   const sum = (crit) =>
-    rows
+    filtered
       .filter((r) => r.Criterion === crit)
-      .reduce((a, b) => a + Number(b.Value || 0), 0);
+      .reduce((t, r) => t + Number(r.Value || 0), 0);
 
-  const totalCall = sum("Call Count");
-  const totalMoney = sum("Money Collection");
-  const totalPTP = sum("PTP Count");
-  const totalLogin = sum("Login Time");
+  const Kpis = {
+    Calls: sum("Call Count"),
+    Money: sum("Money Collection"),
+    PTP: sum("PTP Count"),
+    Login: sum("Login Time"),
+  };
 
-  // ========= TREND CHART DATA ===========
-  const trendData = rows
-    .filter((r) => r.Criterion === trendMetric)
-    .filter((r) => r.Subcategory === trendBucket)
-    .map((r) => ({
-      date: r.date.slice(0, 10),
-      value: Number(r.Value),
-    }))
-    .sort((a, b) => (a.date > b.date ? 1 : -1));
+  // Trend data (money collection per date)
+  const trend = [];
+  const dateGroups = {};
 
-  // Get all agents for dropdown
-  const agentList = [...new Set(allRows.map((r) => r.Employee))];
+  filtered.forEach((r) => {
+    if (!dateGroups[r.safeDate]) dateGroups[r.safeDate] = 0;
+    if (r.Criterion === "Money Collection") {
+      dateGroups[r.safeDate] += Number(r.Value || 0);
+    }
+  });
 
-  // Buckets for money collection
-  const bucketOptions = ["PreDue", "Soft", "Medium", "Hard", "RES"];
+  for (const d in dateGroups) {
+    trend.push({ date: d, value: dateGroups[d] });
+  }
+
+  trend.sort((a, b) => (a.date > b.date ? 1 : -1));
 
   return (
-    <div style={{ display: "flex" }}>
-      {/* -------- SIDEBAR -------- */}
-      <div style={{
-        width: 260, padding: 20, background: "#0d1b2a",
-        color: "white", height: "100vh"
-      }}>
-        <h3>Collections Dashboard</h3>
+    <div style={{ padding: 20 }}>
+      <h1>Manager Dashboard</h1>
 
-        {/* MODE TOGGLE */}
-        <p>FILTER MODE</p>
-        <label>
-          <input
-            type="radio"
-            checked={mode === "single"}
-            onChange={() => setMode("single")}
-          />
-          &nbsp;Single Day
-        </label>
-        <br />
-        <label>
-          <input
-            type="radio"
-            checked={mode === "range"}
-            onChange={() => setMode("range")}
-          />
-          &nbsp;Date Range
-        </label>
+      <p>
+        Total rows after filters: <strong>{filtered.length}</strong>
+      </p>
 
-        {/* DATE PICKERS */}
-        <div style={{ marginTop: 20 }}>
-          {mode === "single" && (
-            <>
-              <p>Select Date</p>
-              <input
-                type="date"
-                value={singleDate}
-                onChange={(e) => setSingleDate(e.target.value)}
-                style={{ width: "100%" }}
-              />
-            </>
-          )}
-
-          {mode === "range" && (
-            <>
-              <p>Start Date</p>
-              <input
-                type="date"
-                value={rangeStart}
-                onChange={(e) => setRangeStart(e.target.value)}
-                style={{ width: "100%" }}
-              />
-              <p>End Date</p>
-              <input
-                type="date"
-                value={rangeEnd}
-                onChange={(e) => setRangeEnd(e.target.value)}
-                style={{ width: "100%" }}
-              />
-            </>
-          )}
-        </div>
-
-        {/* AGENT FILTER */}
-        <p style={{ marginTop: 20 }}>Agent</p>
-        <select
-          value={selectedAgent}
-          onChange={(e) => setSelectedAgent(e.target.value)}
-          style={{ width: "100%" }}
-        >
-          <option>All</option>
-          {agentList.map((a) => (
-            <option key={a}>{a}</option>
-          ))}
-        </select>
-
-        {/* CRITERION FILTER */}
-        <p style={{ marginTop: 20 }}>Criterion</p>
-        <select
-          value={selectedCriterion}
-          onChange={(e) => setSelectedCriterion(e.target.value)}
-          style={{ width: "100%" }}
-        >
-          <option>All</option>
-          <option>Call Count</option>
-          <option>Money Collection</option>
-          <option>PTP Count</option>
-          <option>Login Time</option>
-        </select>
-
-        {/* TREND METRIC */}
-        <p style={{ marginTop: 20 }}>Trend Metric</p>
-        <select
-          value={trendMetric}
-          onChange={(e) => setTrendMetric(e.target.value)}
-          style={{ width: "100%" }}
-        >
-          <option>Money Collection</option>
-          <option>Call Count</option>
-          <option>PTP Count</option>
-          <option>Login Time</option>
-        </select>
-
-        {/* TREND BUCKET (Only shows for Money Collection) */}
-        {trendMetric === "Money Collection" && (
-          <>
-            <p style={{ marginTop: 20 }}>Bucket</p>
-            <select
-              value={trendBucket}
-              onChange={(e) => setTrendBucket(e.target.value)}
-              style={{ width: "100%" }}
-            >
-              {bucketOptions.map((b) => (
-                <option key={b}>{b}</option>
-              ))}
-            </select>
-          </>
-        )}
+      {/* KPI CARDS */}
+      <div style={{ display: "flex", gap: 20 }}>
+        <Kpi label="Call Count" value={Kpis.Calls} />
+        <Kpi label="Money Collection" value={Kpis.Money} />
+        <Kpi label="PTP Count" value={Kpis.PTP} />
+        <Kpi label="Login Time" value={Kpis.Login} />
       </div>
 
-      {/* -------------- MAIN CONTENT -------------- */}
-      <div style={{ flex: 1, padding: 30 }}>
-        <h1>Manager Dashboard</h1>
-        <p>
-          Total rows after filters: <b>{rows.length}</b> | Mode:{" "}
-          <b>{mode}</b>
-        </p>
-
-        {/* Summary Cards */}
-        <div style={{ display: "flex", gap: 20 }}>
-          <Card title="Call Count" value={totalCall} />
-          <Card title="Money Collection" value={totalMoney.toLocaleString()} />
-          <Card title="PTP Count" value={totalPTP} />
-          <Card title="Login Time" value={totalLogin} />
-        </div>
-
-        {/* TREND LINE CHART */}
-        <h3 style={{ marginTop: 40 }}>
-          Trend — {trendMetric}
-          {trendMetric === "Money Collection" ? ` (${trendBucket})` : ""}
-        </h3>
-
-        <div style={{ height: 350 }}>
-          <ResponsiveContainer>
-            <LineChart data={trendData}>
-              <CartesianGrid stroke="#ccc" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line dataKey="value" stroke="#ff7300" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      {/* TREND CHART */}
+      <h3 style={{ marginTop: 40 }}>Trend — Money Collection</h3>
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={trend}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="date" />
+          <YAxis />
+          <Tooltip />
+          <Line type="monotone" dataKey="value" stroke="#ff6600" />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
 
-function Card({ title, value }) {
+function Kpi({ label, value }) {
   return (
     <div
       style={{
-        background: "white",
         padding: 20,
         borderRadius: 10,
-        minWidth: 220,
-        boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
+        background: "#fff",
+        width: 200,
+        boxShadow: "0px 2px 5px rgba(0,0,0,0.1)",
       }}
     >
-      <h4>{title}</h4>
-      <div style={{ fontSize: 28, fontWeight: 600 }}>{value}</div>
+      <h4>{label}</h4>
+      <h2>{value}</h2>
     </div>
   );
 }
