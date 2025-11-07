@@ -1,47 +1,68 @@
 import { requireAuth } from "../../utils/requireAuth";
 
+// ✅ Only agents allowed
 export async function getServerSideProps(ctx) {
   return requireAuth(ctx, ["agent"]);
 }
 
+import { useEffect, useState } from "react";
+import { supabase } from "../../lib/supabase";
 
-import { useState } from "react";
-import { useRouter } from "next/router";
+export default function AgentDashboard() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState(null);
 
-export default function AgentLogin() {
-  const [empId, setEmpId] = useState("");
-  const router = useRouter();
+  useEffect(() => {
+    (async () => {
+      // ✅ Get logged-in user
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (!empId) return alert("Please enter your Employee ID");
-    router.push(`/agent/dashboard?empId=${empId}`);
-  };
+      setUser(session.user);
+
+      // ✅ Agent ID = user email OR full_name from profile
+      const empId = session.user.email;
+
+      // ✅ Load stats from Airtable by Employee email
+      const res = await fetch(`/api/getAgentStats?empId=${empId}`);
+      const json = await res.json();
+      if (json.success) setRows(json.data);
+    })();
+  }, []);
 
   return (
-    <div style={{ padding: "60px", fontFamily: "sans-serif" }}>
-      <h1>Agent Login</h1>
-      <form onSubmit={handleLogin}>
-        <label>
-          Employee ID:
-          <input
-            type="number"
-            value={empId}
-            onChange={(e) => setEmpId(e.target.value)}
-            style={{ marginLeft: "10px", padding: "6px" }}
-          />
-        </label>
-        <button
-          type="submit"
-          style={{
-            marginLeft: "15px",
-            padding: "6px 12px",
-            cursor: "pointer",
-          }}
-        >
-          Login
-        </button>
-      </form>
+    <div style={{ padding: 40, fontFamily: "Arial" }}>
+      <h1>Agent Dashboard</h1>
+
+      {user && (
+        <p>
+          Logged in as: <strong>{user.email}</strong>
+        </p>
+      )}
+
+      {rows.length === 0 && <p>Loading stats...</p>}
+
+      {rows.length > 0 && (
+        <table border="1" cellPadding="8" style={{ marginTop: 20 }}>
+          <thead>
+            <tr>
+              <th>Criterion</th>
+              <th>Subcategory</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td>{r.Criterion}</td>
+                <td>{r.Subcategory}</td>
+                <td>{r.Value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
