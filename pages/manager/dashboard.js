@@ -1,32 +1,25 @@
-// ✅ Manager Dashboard – Clean Updated Version with Bucket Filter + Date Fix
-
 import { useEffect, useState } from "react";
 import {
-  LineChart,
-  Line,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend,
+  ResponsiveContainer, CartesianGrid
 } from "recharts";
 
 export default function ManagerDashboard() {
   const [allRows, setAllRows] = useState([]);
   const [rows, setRows] = useState([]);
 
-  // ✅ Filters
-  const [mode, setMode] = useState("single");
+  // Filters
+  const [mode, setMode] = useState("single");   // single | range
   const [singleDate, setSingleDate] = useState("");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
 
-  const [agent, setAgent] = useState("All");
+  const [selectedAgent, setSelectedAgent] = useState("All");
   const [selectedCriterion, setSelectedCriterion] = useState("All");
-  const [bucket, setBucket] = useState("All");
+
+  // Trend metric
+  const [trendMetric, setTrendMetric] = useState("Money Collection");
+  const [trendBucket, setTrendBucket] = useState("Hard");
 
   useEffect(() => {
     async function load() {
@@ -35,299 +28,251 @@ export default function ManagerDashboard() {
       if (json.success) {
         setAllRows(json.data);
 
-        // ✅ Set latest date automatically
-        if (json.data.length > 0) {
-          const latest = json.data
-            .map((d) => d.date)
-            .sort()
-            .reverse()[0];
-          setSingleDate(latest);
-        }
+        // auto-select latest date
+        const newest = json.data
+          .map(r => r.date.slice(0, 10))
+          .sort()
+          .reverse()[0];
+
+        setSingleDate(newest);
       }
     }
     load();
   }, []);
 
-  // ✅ Filtering Logic
+  // ✅ Date + Filters
   useEffect(() => {
+    if (allRows.length === 0) return;
+
     let filtered = [...allRows];
 
-    // ✅ Date filter
+    // ✅ DATE FILTER FIX — trims timestamp
     if (mode === "single" && singleDate) {
-      filtered = filtered.filter((r) => r.date === singleDate);
-    }
-
-    if (mode === "range" && rangeStart && rangeEnd) {
       filtered = filtered.filter(
-        (r) => r.date >= rangeStart && r.date <= rangeEnd
+        (r) => r.date.slice(0, 10) === singleDate
       );
     }
 
-    // ✅ Agent filter
-    if (agent !== "All") {
-      filtered = filtered.filter((r) => r.Employee === agent);
+    // ✅ DATE RANGE FIX
+    if (mode === "range" && rangeStart && rangeEnd) {
+      filtered = filtered.filter((r) => {
+        const d = r.date.slice(0, 10);
+        return d >= rangeStart && d <= rangeEnd;
+      });
     }
 
-    // ✅ Criterion filter
+    // Agent
+    if (selectedAgent !== "All") {
+      filtered = filtered.filter((r) => r.Employee === selectedAgent);
+    }
+
+    // Criterion
     if (selectedCriterion !== "All") {
       filtered = filtered.filter((r) => r.Criterion === selectedCriterion);
     }
 
-    // ✅ Bucket filter (Money Collection only)
-    if (selectedCriterion === "Money Collection") {
-      if (bucket !== "All") {
-        filtered = filtered.filter((r) => r.Subcategory === bucket);
-      }
-    }
-
     setRows(filtered);
-  }, [allRows, mode, singleDate, rangeStart, rangeEnd, agent, selectedCriterion, bucket]);
+  }, [allRows, mode, singleDate, rangeStart, rangeEnd, selectedAgent, selectedCriterion]);
 
-  // ✅ Summary values
-  const totalCall = rows
-    .filter((r) => r.Criterion === "Call Count")
-    .reduce((a, b) => a + Number(b.Value), 0);
+  // ========= SUMMARY TOTALS ===========
+  const sum = (crit) =>
+    rows
+      .filter((r) => r.Criterion === crit)
+      .reduce((a, b) => a + Number(b.Value || 0), 0);
 
-  const totalMoney = rows
-    .filter((r) => r.Criterion === "Money Collection")
-    .reduce((a, b) => a + Number(b.Value), 0);
+  const totalCall = sum("Call Count");
+  const totalMoney = sum("Money Collection");
+  const totalPTP = sum("PTP Count");
+  const totalLogin = sum("Login Time");
 
-  const totalPTP = rows
-    .filter((r) => r.Criterion === "PTP Count")
-    .reduce((a, b) => a + Number(b.Value), 0);
+  // ========= TREND CHART DATA ===========
+  const trendData = rows
+    .filter((r) => r.Criterion === trendMetric)
+    .filter((r) => r.Subcategory === trendBucket)
+    .map((r) => ({
+      date: r.date.slice(0, 10),
+      value: Number(r.Value),
+    }))
+    .sort((a, b) => (a.date > b.date ? 1 : -1));
 
-  const totalLogin = rows
-    .filter((r) => r.Criterion === "Login Time")
-    .reduce((a, b) => a + Number(b.Value), 0);
+  // Get all agents for dropdown
+  const agentList = [...new Set(allRows.map((r) => r.Employee))];
 
-  // ✅ Build trend chart data
-  const trendData = rows.map((r) => ({
-    date: r.date,
-    value: Number(r.Value),
-  }));
+  // Buckets for money collection
+  const bucketOptions = ["PreDue", "Soft", "Medium", "Hard", "RES"];
 
   return (
-    <div style={styles.page}>
-      <div style={styles.sidebar}>
-        <h2 style={styles.title}>Collections Dashboard</h2>
+    <div style={{ display: "flex" }}>
+      {/* -------- SIDEBAR -------- */}
+      <div style={{
+        width: 260, padding: 20, background: "#0d1b2a",
+        color: "white", height: "100vh"
+      }}>
+        <h3>Collections Dashboard</h3>
 
-        {/* ✅ Filter Mode */}
-        <div style={styles.section}>
-          <label style={styles.label}>FILTER MODE</label>
-          <div>
-            <label>
+        {/* MODE TOGGLE */}
+        <p>FILTER MODE</p>
+        <label>
+          <input
+            type="radio"
+            checked={mode === "single"}
+            onChange={() => setMode("single")}
+          />
+          &nbsp;Single Day
+        </label>
+        <br />
+        <label>
+          <input
+            type="radio"
+            checked={mode === "range"}
+            onChange={() => setMode("range")}
+          />
+          &nbsp;Date Range
+        </label>
+
+        {/* DATE PICKERS */}
+        <div style={{ marginTop: 20 }}>
+          {mode === "single" && (
+            <>
+              <p>Select Date</p>
               <input
-                type="radio"
-                checked={mode === "single"}
-                onChange={() => setMode("single")}
-              />{" "}
-              Single Day
-            </label>
-            <br />
-            <label>
+                type="date"
+                value={singleDate}
+                onChange={(e) => setSingleDate(e.target.value)}
+                style={{ width: "100%" }}
+              />
+            </>
+          )}
+
+          {mode === "range" && (
+            <>
+              <p>Start Date</p>
               <input
-                type="radio"
-                checked={mode === "range"}
-                onChange={() => setMode("range")}
-              />{" "}
-              Date Range
-            </label>
-          </div>
+                type="date"
+                value={rangeStart}
+                onChange={(e) => setRangeStart(e.target.value)}
+                style={{ width: "100%" }}
+              />
+              <p>End Date</p>
+              <input
+                type="date"
+                value={rangeEnd}
+                onChange={(e) => setRangeEnd(e.target.value)}
+                style={{ width: "100%" }}
+              />
+            </>
+          )}
         </div>
 
-        {/* ✅ Date Selection */}
-        {mode === "single" && (
-          <div style={styles.section}>
-            <label style={styles.label}>Select Date</label>
-            <input
-              type="date"
-              value={singleDate}
-              onChange={(e) => setSingleDate(e.target.value)}
-              style={styles.dateInput}
-            />
-          </div>
-        )}
+        {/* AGENT FILTER */}
+        <p style={{ marginTop: 20 }}>Agent</p>
+        <select
+          value={selectedAgent}
+          onChange={(e) => setSelectedAgent(e.target.value)}
+          style={{ width: "100%" }}
+        >
+          <option>All</option>
+          {agentList.map((a) => (
+            <option key={a}>{a}</option>
+          ))}
+        </select>
 
-        {mode === "range" && (
-          <div style={styles.section}>
-            <label style={styles.label}>Start Date</label>
-            <input
-              type="date"
-              value={rangeStart}
-              onChange={(e) => setRangeStart(e.target.value)}
-              style={styles.dateInput}
-            />
+        {/* CRITERION FILTER */}
+        <p style={{ marginTop: 20 }}>Criterion</p>
+        <select
+          value={selectedCriterion}
+          onChange={(e) => setSelectedCriterion(e.target.value)}
+          style={{ width: "100%" }}
+        >
+          <option>All</option>
+          <option>Call Count</option>
+          <option>Money Collection</option>
+          <option>PTP Count</option>
+          <option>Login Time</option>
+        </select>
 
-            <label style={styles.label}>End Date</label>
-            <input
-              type="date"
-              value={rangeEnd}
-              onChange={(e) => setRangeEnd(e.target.value)}
-              style={styles.dateInput}
-            />
-          </div>
-        )}
+        {/* TREND METRIC */}
+        <p style={{ marginTop: 20 }}>Trend Metric</p>
+        <select
+          value={trendMetric}
+          onChange={(e) => setTrendMetric(e.target.value)}
+          style={{ width: "100%" }}
+        >
+          <option>Money Collection</option>
+          <option>Call Count</option>
+          <option>PTP Count</option>
+          <option>Login Time</option>
+        </select>
 
-        {/* ✅ Agent Filter */}
-        <div style={styles.section}>
-          <label style={styles.label}>Agent</label>
-          <select
-            value={agent}
-            onChange={(e) => setAgent(e.target.value)}
-            style={styles.select}
-          >
-            <option value="All">All</option>
-            {[...new Set(allRows.map((r) => r.Employee))].map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* ✅ Criterion Filter */}
-        <div style={styles.section}>
-          <label style={styles.label}>Criterion</label>
-          <select
-            value={selectedCriterion}
-            onChange={(e) => {
-              setSelectedCriterion(e.target.value);
-              setBucket("All"); // Reset bucket automatically
-            }}
-            style={styles.select}
-          >
-            <option value="All">All</option>
-            <option value="Call Count">Call Count</option>
-            <option value="Money Collection">Money Collection</option>
-            <option value="PTP Count">PTP Count</option>
-            <option value="Login Time">Login Time</option>
-          </select>
-        </div>
-
-        {/* ✅ Bucket Filter for Money Collection */}
-        {selectedCriterion === "Money Collection" && (
-          <div style={styles.section}>
-            <label style={styles.label}>Bucket</label>
+        {/* TREND BUCKET (Only shows for Money Collection) */}
+        {trendMetric === "Money Collection" && (
+          <>
+            <p style={{ marginTop: 20 }}>Bucket</p>
             <select
-              value={bucket}
-              onChange={(e) => setBucket(e.target.value)}
-              style={styles.select}
+              value={trendBucket}
+              onChange={(e) => setTrendBucket(e.target.value)}
+              style={{ width: "100%" }}
             >
-              <option value="All">All</option>
-              <option value="PreDue">PreDue</option>
-              <option value="Soft">Soft</option>
-              <option value="Medium">Medium</option>
-              <option value="Hard">Hard</option>
-              <option value="RES">RES</option>
+              {bucketOptions.map((b) => (
+                <option key={b}>{b}</option>
+              ))}
             </select>
-          </div>
+          </>
         )}
       </div>
 
-      {/* ✅ Main Content */}
-      <div style={styles.main}>
+      {/* -------------- MAIN CONTENT -------------- */}
+      <div style={{ flex: 1, padding: 30 }}>
         <h1>Manager Dashboard</h1>
         <p>
-          Total rows after filters: <b>{rows.length}</b>
+          Total rows after filters: <b>{rows.length}</b> | Mode:{" "}
+          <b>{mode}</b>
         </p>
 
-        {/* ✅ KPIs */}
-        <div style={styles.kpiRow}>
-          {kpi("Call Count", totalCall)}
-          {kpi("Money Collection", totalMoney)}
-          {kpi("PTP Count", totalPTP)}
-          {kpi("Login Time", totalLogin)}
+        {/* Summary Cards */}
+        <div style={{ display: "flex", gap: 20 }}>
+          <Card title="Call Count" value={totalCall} />
+          <Card title="Money Collection" value={totalMoney.toLocaleString()} />
+          <Card title="PTP Count" value={totalPTP} />
+          <Card title="Login Time" value={totalLogin} />
         </div>
 
-        {/* ✅ Trend Chart */}
-        <div style={styles.chartBox}>
-          <h3>Trend — {selectedCriterion}</h3>
+        {/* TREND LINE CHART */}
+        <h3 style={{ marginTop: 40 }}>
+          Trend — {trendMetric}
+          {trendMetric === "Money Collection" ? ` (${trendBucket})` : ""}
+        </h3>
 
-          {trendData.length === 0 ? (
-            <p>No data</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={trendData}>
-                <Line type="monotone" dataKey="value" stroke="#ff7300" />
-                <CartesianGrid stroke="#ccc" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
+        <div style={{ height: 350 }}>
+          <ResponsiveContainer>
+            <LineChart data={trendData}>
+              <CartesianGrid stroke="#ccc" />
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Line dataKey="value" stroke="#ff7300" strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </div>
   );
 }
 
-/* ✅ Reusable KPI Box */
-const kpi = (label, value) => (
-  <div style={styles.kpi}>
-    <div style={styles.kpiLabel}>{label}</div>
-    <div style={styles.kpiValue}>{value}</div>
-  </div>
-);
-
-/* ✅ Styles */
-const styles = {
-  page: { display: "flex", height: "100vh", background: "#f8fafc" },
-
-  sidebar: {
-    width: 260,
-    padding: 20,
-    background: "#0f172a",
-    color: "white",
-    overflowY: "auto",
-  },
-
-  title: { fontSize: 18, marginBottom: 20 },
-
-  section: { marginBottom: 20 },
-
-  label: { display: "block", marginBottom: 6 },
-
-  select: {
-    width: "100%",
-    padding: "8px 10px",
-    background: "#1e293b",
-    border: "1px solid #334155",
-    borderRadius: 8,
-    color: "white",
-  },
-
-  dateInput: {
-    width: "100%",
-    padding: "8px 10px",
-    background: "#1e293b",
-    border: "1px solid #334155",
-    borderRadius: 8,
-    color: "white",
-    WebkitAppearance: "menulist",
-    MozAppearance: "menulist",
-  },
-
-  main: { flex: 1, padding: 30, overflowY: "auto" },
-
-  kpiRow: { display: "flex", gap: 20, marginBottom: 30 },
-
-  kpi: {
-    background: "white",
-    padding: 20,
-    borderRadius: 12,
-    width: 220,
-    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-  },
-
-  kpiLabel: { fontSize: 14, color: "#475569" },
-  kpiValue: { fontSize: 24, fontWeight: "bold", marginTop: 8 },
-
-  chartBox: {
-    background: "white",
-    padding: 20,
-    borderRadius: 12,
-    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-  },
-};
+function Card({ title, value }) {
+  return (
+    <div
+      style={{
+        background: "white",
+        padding: 20,
+        borderRadius: 10,
+        minWidth: 220,
+        boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
+      }}
+    >
+      <h4>{title}</h4>
+      <div style={{ fontSize: 28, fontWeight: 600 }}>{value}</div>
+    </div>
+  );
+}
