@@ -6,42 +6,53 @@ const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY })
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ success: false, error: "Method not allowed" });
+    return res.status(405).json({
+      success: false,
+      error: "Method not allowed",
+    });
   }
 
   try {
     const { rows, managerName } = req.body;
 
     if (!rows || rows.length === 0) {
-      return res.status(400).json({ success: false, error: "No rows provided" });
+      return res.status(400).json({
+        success: false,
+        error: "No rows provided",
+      });
     }
 
-    // ✅ Generate unique ID for this upload
+    if (!managerName) {
+      return res.status(400).json({
+        success: false,
+        error: "Manager name missing",
+      });
+    }
+
+    // ✅ Create a unique upload ID for this batch
     const uploadId = uuidv4();
     let inserted = 0;
     let recordIds = [];
 
-    // ✅ Batch rows into groups of 10 (Airtable limit)
+    // Airtable only allows 10 records per batch
     const batches = [];
-    let copyRows = [...rows];
-    while (copyRows.length) {
-      batches.push(copyRows.splice(0, 10));
-    }
+    const copy = [...rows];
+    while (copy.length) batches.push(copy.splice(0, 10));
 
-    // ✅ Create stats entries
     for (const batch of batches) {
       const formatted = batch.map((r) => ({
         fields: {
-          Employee: r.Employee,
-          "Employee ID": String(r["Employee ID"]),
+          Employee: r.Employee || "",
+          "Employee ID": r["Employee ID"] ? String(r["Employee ID"]) : "",
+          email: r.email || "",                   // ✅ NEW — required for agent stats
           Criterion: r.Criterion,
-          Subcategory: r.Subcategory ?? "",
-          Value: Number(r.Value),
+          Subcategory: r.Subcategory || "",
+          Value: Number(r.Value || 0),
+
+          // Upload metadata
           source_upload: "Manager Upload",
           uploaded_by: managerName,
-
-          // ✅ Correct field name for Airtable
-          upload_id: uploadId
+          upload_id: uploadId,
         },
       }));
 
@@ -50,16 +61,13 @@ export default async function handler(req, res) {
       recordIds.push(...created.map((rec) => rec.id));
     }
 
-    // ✅ Write upload log entry (FIXED)
+    // ✅ Write upload log entry
     await base("UploadLog").create([
       {
         fields: {
           manager_name: managerName,
           row_count: inserted,
-
-          // ✅ Correct field name (Airtable expects "upload_id")
           upload_id: uploadId,
-
           stats_record_ids: recordIds.join(","),
           note: "Manager Excel Upload",
         },
@@ -69,11 +77,13 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       inserted,
-      upload_id: uploadId,
+      uploadId,
     });
-
   } catch (err) {
     console.error("UPLOAD ERROR:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 }
