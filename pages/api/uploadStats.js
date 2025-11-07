@@ -1,3 +1,4 @@
+// pages/api/uploadStats.js
 import Airtable from "airtable";
 import { v4 as uuid } from "uuid";
 
@@ -14,12 +15,19 @@ export default async function handler(req, res) {
     if (!rows || rows.length === 0)
       return res.status(400).json({ success: false, error: "No rows found" });
 
+    if (!managerName)
+      return res.status(400).json({ success: false, error: "Manager name required" });
+
+    // ✅ Create a unique upload session ID
     const upload_id = uuid();
     let insertedRecordIds = [];
 
+    // ✅ Airtable max 10 records per batch
     const batches = [];
-
-    while (rows.length) batches.push(rows.splice(0, 10));
+    const rowsCopy = [...rows];
+    while (rowsCopy.length) {
+      batches.push(rowsCopy.splice(0, 10));
+    }
 
     for (const batch of batches) {
       const formatted = batch.map((r) => ({
@@ -27,32 +35,34 @@ export default async function handler(req, res) {
           Employee: r.Employee,
           "Employee ID": String(r["Employee ID"]),
           Criterion: r.Criterion,
-          Subcategory: r.Subcategory,
+          Subcategory: r.Subcategory || "",
           Value: Number(r.Value),
           uploaded_by: managerName,
-          source_upload: upload_id,
-        },
+          source_upload: upload_id
+        }
       }));
 
       const created = await base("Stats").create(formatted);
-      insertedRecordIds.push(...created.map((rec) => rec.id));
+      insertedRecordIds.push(...created.map((x) => x.id));
     }
 
-    // ✅ Save upload history
+    // ✅ Log upload history
     await base("UploadLog").create({
       upload_id,
       manager_name: managerName,
       row_count: insertedRecordIds.length,
       stats_record_ids: insertedRecordIds.join(","),
-      note: "Upload completed",
+      created_at: new Date().toISOString(),
+      note: "Upload completed"
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       inserted: insertedRecordIds.length,
-      upload_id,
+      upload_id
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("UPLOAD ERROR:", err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 }
