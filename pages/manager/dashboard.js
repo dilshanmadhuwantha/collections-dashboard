@@ -1,163 +1,193 @@
 import { useEffect, useState } from "react";
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  CartesianGrid,
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from "recharts";
 
 export default function ManagerDashboard() {
   const [rows, setRows] = useState([]);
-  const [filtered, setFiltered] = useState([]);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [filterMode, setFilterMode] = useState("single");
 
-  // Filters
-  const [mode, setMode] = useState("single");
-  const [singleDate, setSingleDate] = useState("");
-  const [rangeStart, setRangeStart] = useState("");
-  const [rangeEnd, setRangeEnd] = useState("");
-
-  const [agent, setAgent] = useState("All");
-  const [criterion, setCriterion] = useState("All");
-  const [subcategory, setSubcategory] = useState("All");
-
-  // Load data from API
   useEffect(() => {
-    async function load() {
-      const res = await fetch("/api/getAllStats");
-      const json = await res.json();
-
-      if (json.success) {
-        const data = json.data.map((r) => ({
-          ...r,
-          safeDate: (r.date || r.created_at || "").slice(0, 10),
-        }));
-
-        setRows(data);
-
-        // Auto-select newest date
-        const newest = data.length
-          ? data
-              .map((r) => r.safeDate)
-              .filter((d) => d)
-              .sort()
-              .reverse()[0]
-          : "";
-
-        setSingleDate(newest);
-      }
-    }
-
-    load();
+    loadData();
   }, []);
 
-  // Filter logic
-  useEffect(() => {
-    let f = [...rows];
-
-    // Filter by date mode
-    if (mode === "single" && singleDate) {
-      f = f.filter((r) => r.safeDate === singleDate);
+  async function loadData() {
+    const res = await fetch("/api/getAllStats");
+    const json = await res.json();
+    if (json.success) {
+      setRows(json.data);
     }
-
-    if (mode === "range" && rangeStart && rangeEnd) {
-      f = f.filter(
-        (r) => r.safeDate >= rangeStart && r.safeDate <= rangeEnd
-      );
-    }
-
-    // Filter by agent
-    if (agent !== "All") f = f.filter((r) => r.Employee === agent);
-
-    // Filter by criterion
-    if (criterion !== "All") f = f.filter((r) => r.Criterion === criterion);
-
-    // Filter by subcategory
-    if (subcategory !== "All")
-      f = f.filter((r) => r.Subcategory === subcategory);
-
-    setFiltered(f);
-  }, [rows, mode, singleDate, rangeStart, rangeEnd, agent, criterion, subcategory]);
-
-  // Group and summarize metrics
-  const sum = (crit) =>
-    filtered
-      .filter((r) => r.Criterion === crit)
-      .reduce((t, r) => t + Number(r.Value || 0), 0);
-
-  const Kpis = {
-    Calls: sum("Call Count"),
-    Money: sum("Money Collection"),
-    PTP: sum("PTP Count"),
-    Login: sum("Login Time"),
-  };
-
-  // Trend data (money collection per date)
-  const trend = [];
-  const dateGroups = {};
-
-  filtered.forEach((r) => {
-    if (!dateGroups[r.safeDate]) dateGroups[r.safeDate] = 0;
-    if (r.Criterion === "Money Collection") {
-      dateGroups[r.safeDate] += Number(r.Value || 0);
-    }
-  });
-
-  for (const d in dateGroups) {
-    trend.push({ date: d, value: dateGroups[d] });
   }
 
-  trend.sort((a, b) => (a.date > b.date ? 1 : -1));
+  // Extract newest date for auto-select
+  useEffect(() => {
+    if (rows.length > 0) {
+      const newest = rows.reduce((a, b) =>
+        new Date(a.created_at) > new Date(b.created_at) ? a : b
+      );
+      setSelectedDate(newest.date);
+    }
+  }, [rows]);
+
+  const filteredRows = rows.filter(r => r.date === selectedDate);
+
+  const totalCall = filteredRows
+    .filter(r => r.Criterion === "Call Count")
+    .reduce((a, b) => a + Number(b.Value), 0);
+
+  const totalMoney = filteredRows
+    .filter(r => r.Criterion === "Money Collection")
+    .reduce((a, b) => a + Number(b.Value), 0);
+
+  const totalPTP = filteredRows
+    .filter(r => r.Criterion === "PTP Count")
+    .reduce((a, b) => a + Number(b.Value), 0);
+
+  const totalLogin = filteredRows
+    .filter(r => r.Criterion === "Login Time")
+    .reduce((a, b) => a + Number(b.Value), 0);
+
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Manager Dashboard</h1>
+    <div style={styles.container}>
+      
+      {/* ✅ LEFT SIDEBAR */}
+      <div style={styles.sidebar}>
+        <h2 style={styles.sidebarTitle}>Collections Dashboard</h2>
 
-      <p>
-        Total rows after filters: <strong>{filtered.length}</strong>
-      </p>
+        <p style={styles.label}>FILTER MODE</p>
+        <label style={styles.radioRow}>
+          <input
+            type="radio"
+            checked={filterMode === "single"}
+            onChange={() => setFilterMode("single")}
+          />
+          Single Day
+        </label>
 
-      {/* KPI CARDS */}
-      <div style={{ display: "flex", gap: 20 }}>
-        <Kpi label="Call Count" value={Kpis.Calls} />
-        <Kpi label="Money Collection" value={Kpis.Money} />
-        <Kpi label="PTP Count" value={Kpis.PTP} />
-        <Kpi label="Login Time" value={Kpis.Login} />
+        <p style={{ marginTop: 20 }}>Select Date</p>
+        <input
+          type="date"
+          value={selectedDate || ""}
+          onChange={(e) => setSelectedDate(e.target.value)}
+          style={styles.dateInput}
+        />
       </div>
 
-      {/* TREND CHART */}
-      <h3 style={{ marginTop: 40 }}>Trend — Money Collection</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={trend}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="date" />
-          <YAxis />
-          <Tooltip />
-          <Line type="monotone" dataKey="value" stroke="#ff6600" />
-        </LineChart>
-      </ResponsiveContainer>
+      {/* ✅ MAIN CONTENT */}
+      <div style={styles.main}>
+        <h1>Manager Dashboard</h1>
+        <p>Total rows after filters: {filteredRows.length}</p>
+
+        {/* ✅ KPIs */}
+        <div style={styles.kpiRow}>
+          <div style={styles.kpiBox}>
+            <h4>Call Count</h4>
+            <p>{totalCall}</p>
+          </div>
+
+          <div style={styles.kpiBox}>
+            <h4>Money Collection</h4>
+            <p>{totalMoney.toLocaleString()}</p>
+          </div>
+
+          <div style={styles.kpiBox}>
+            <h4>PTP Count</h4>
+            <p>{totalPTP}</p>
+          </div>
+
+          <div style={styles.kpiBox}>
+            <h4>Login Time</h4>
+            <p>{totalLogin}</p>
+          </div>
+        </div>
+
+        {/* ✅ Trend Chart */}
+        <h3 style={{ marginTop: 40 }}>Trend — Money Collection</h3>
+        <div style={styles.chartBox}>
+          <ResponsiveContainer>
+            <LineChart
+              data={[{ date: selectedDate, value: totalMoney }]}
+            >
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip />
+              <Line type="monotone" dataKey="value" stroke="#FF6600" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+      </div>
     </div>
   );
 }
 
-function Kpi({ label, value }) {
-  return (
-    <div
-      style={{
-        padding: 20,
-        borderRadius: 10,
-        background: "#fff",
-        width: 200,
-        boxShadow: "0px 2px 5px rgba(0,0,0,0.1)",
-      }}
-    >
-      <h4>{label}</h4>
-      <h2>{value}</h2>
-    </div>
-  );
-}
+const styles = {
+  container: {
+    display: "flex",
+    height: "100vh",
+    overflow: "hidden",
+  },
+
+  sidebar: {
+    width: 260,
+    background: "#0c1222",
+    color: "white",
+    padding: 20,
+    overflowY: "auto",
+  },
+
+  main: {
+    flex: 1,
+    padding: 30,
+    overflowY: "auto",
+    background: "#f7f9fc",
+  },
+
+  sidebarTitle: {
+    fontSize: 20,
+    marginBottom: 20,
+  },
+
+  label: {
+    fontSize: 12,
+    marginTop: 20,
+  },
+
+  radioRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+  },
+
+  dateInput: {
+    width: "100%",
+    padding: 10,
+    borderRadius: 6,
+    border: "1px solid #999",
+    marginTop: 5,
+  },
+
+  kpiRow: {
+    display: "flex",
+    gap: 20,
+  },
+
+  kpiBox: {
+    flex: 1,
+    background: "white",
+    padding: 20,
+    borderRadius: 10,
+    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+  },
+
+  chartBox: {
+    height: 320,
+    background: "white",
+    borderRadius: 10,
+    padding: 10,
+    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+  },
+};
