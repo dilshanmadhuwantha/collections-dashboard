@@ -7,15 +7,16 @@
     "build": "next build",
     "start": "next start"
   },
-"dependencies": {
-  "next": "13.4.7",
-  "react": "18.2.0",
-  "react-dom": "18.2.0",
-  "airtable": "^0.12.2",
-  "recharts": "^2.8.0",
-  "react-datepicker": "^4.24.0",
-  "xlsx": "^0.18.5",
-  "jspdf": "^2.5.1",
-  "html2canvas": "^1.4.1"
-}
+  "dependencies": {
+    "next": "13.4.7",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "airtable": "^0.12.2",
+    "recharts": "^2.8.0",
+    "react-datepicker": "^4.24.0",
+    "xlsx": "^0.18.5",
+    "jspdf": "^2.5.1",
+    "html2canvas": "^1.4.1",
+    "uuid": "^9.0.0"
+  }
 }
