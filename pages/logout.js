@@ -1,13 +1,21 @@
-import { useEffect } from "react";
-import { supabase } from "../lib/supabase";
+// pages/logout.js
+import { supabase } from "../utils/supabaseClient";
 
 export default function Logout() {
-  useEffect(() => {
-    (async () => {
-      await supabase.auth.signOut();
-      window.location.href = "/login";
-    })();
-  }, []);
+  return (
+    <div>
+      <h2>Logging out...</h2>
+    </div>
+  );
+}
 
-  return <p>Logging out...</p>;
+export async function getServerSideProps() {
+  await supabase.auth.signOut();
+
+  return {
+    redirect: {
+      destination: "/login",
+      permanent: false,
+    },
+  };
 }
