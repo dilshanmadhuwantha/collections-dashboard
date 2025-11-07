@@ -1,35 +1,50 @@
-import { supabase } from "../lib/supabase";
+// utils/requireAuth.js
+import { supabase } from "./supabaseClient";
 
 export async function requireAuth(ctx, allowedRoles = []) {
   const { req } = ctx;
+  const access_token = req.cookies["sb-access-token"];
 
-  // ✅ Get access token from cookies
-  const accessToken = req.cookies["sb-access-token"];
-  if (!accessToken) {
-    return { redirect: { destination: "/login", permanent: false } };
+  if (!access_token) {
+    return {
+      redirect: {
+        destination: "/login",
+        permanent: false,
+      },
+    };
   }
 
-  // ✅ Get the user from token
-  const { data: { user }, error: userErr } = await supabase.auth.getUser(accessToken);
-  if (!user || userErr) {
-    return { redirect: { destination: "/login", permanent: false } };
+  // Validate session
+  const { data: { user } } = await supabase.auth.getUser(access_token).catch(() => ({
+    data: { user: null }
+  }));
+
+  if (!user) {
+    return {
+      redirect: {
+        destination: "/login",
+        permanent: false,
+      },
+    };
   }
 
-  // ✅ Get user profile (role)
+  // Fetch profile
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("*")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
-  if (!profile) {
-    return { redirect: { destination: "/login", permanent: false } };
+  if (!profile || (allowedRoles.length > 0 && !allowedRoles.includes(profile.role))) {
+    return {
+      redirect: {
+        destination: "/login",
+        permanent: false,
+      },
+    };
   }
 
-  // ✅ Check allowed roles
-  if (allowedRoles.length > 0 && !allowedRoles.includes(profile.role)) {
-    return { redirect: { destination: "/login", permanent: false } };
-  }
-
-  return { props: { user, profile } };
+  return {
+    props: { user, profile },
+  };
 }
