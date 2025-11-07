@@ -1,7 +1,7 @@
 // pages/login.js
 import { useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "../lib/supabase";
 
 export default function Login() {
   const [email, setEmail] = useState("");
