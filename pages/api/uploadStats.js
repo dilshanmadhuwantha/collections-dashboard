@@ -16,17 +16,19 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: "No rows provided" });
     }
 
+    // ✅ Generate unique ID for this upload
     const uploadId = uuidv4();
     let inserted = 0;
     let recordIds = [];
 
-    // Batch to 10 rows
+    // ✅ Batch rows into groups of 10 (Airtable limit)
     const batches = [];
-    let tempRows = [...rows];
-    while (tempRows.length) {
-      batches.push(tempRows.splice(0, 10));
+    let copyRows = [...rows];
+    while (copyRows.length) {
+      batches.push(copyRows.splice(0, 10));
     }
 
+    // ✅ Create stats entries
     for (const batch of batches) {
       const formatted = batch.map((r) => ({
         fields: {
@@ -37,7 +39,9 @@ export default async function handler(req, res) {
           Value: Number(r.Value),
           source_upload: "Manager Upload",
           uploaded_by: managerName,
-          upload_id: uploadId       // ✅ must match Airtable
+
+          // ✅ Correct field name for Airtable
+          upload_id: uploadId
         },
       }));
 
@@ -46,23 +50,30 @@ export default async function handler(req, res) {
       recordIds.push(...created.map((rec) => rec.id));
     }
 
-    // ✅ Write into UploadLog
+    // ✅ Write upload log entry (FIXED)
     await base("UploadLog").create([
       {
         fields: {
           manager_name: managerName,
           row_count: inserted,
+
+          // ✅ Correct field name (Airtable expects "upload_id")
           upload_id: uploadId,
-          stats_record_ids: recordIds.join(","),   // ✅ exact field name
-          note: "Manager Excel Upload"
+
+          stats_record_ids: recordIds.join(","),
+          note: "Manager Excel Upload",
         },
       },
     ]);
 
-    res.status(200).json({ success: true, inserted, uploadId });
+    return res.status(200).json({
+      success: true,
+      inserted,
+      upload_id: uploadId,
+    });
 
   } catch (err) {
-    console.error(err);
+    console.error("UPLOAD ERROR:", err);
     return res.status(500).json({ success: false, error: err.message });
   }
 }
